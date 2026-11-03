@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5分カウントダウンタイマー</title>
+    <!-- Tailwind CSSを読み込み、ダークモードの設定を有効化 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class', // classベースでダークモードを切り替え
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800&family=Noto+Sans+JP:wght@500;700&display=swap');
+        
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .timer-digits {
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: "tnum";
+            line-height: 1;
+        }
+
+        @keyframes pulse-alert {
+            0%, 100% { background-color: rgb(254, 226, 226); border-color: rgb(239, 68, 68); }
+            50% { background-color: rgb(254, 202, 202); border-color: rgb(220, 38, 38); }
+        }
+        /* ダークモード時のアラート色 */
+        @keyframes pulse-alert-dark {
+            0%, 100% { background-color: rgb(127, 29, 29); border-color: rgb(185, 28, 28); }
+            50% { background-color: rgb(153, 27, 27); border-color: rgb(220, 38, 38); }
+        }
+        
+        .time-up-bg {
+            animation: pulse-alert 1.2s infinite ease-in-out;
+        }
+        .dark .time-up-bg {
+            animation: pulse-alert-dark 1.2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-300" id="app-body">
+
+    <main id="timer-card" class="bg-white dark:bg-slate-800 w-full max-w-4xl rounded-3xl shadow-xl border-4 border-slate-200 dark:border-slate-700 p-6 sm:p-12 flex flex-col items-center transition-all duration-300">
+        
+        <!-- 上部ヘッダー -->
+        <div class="w-full flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700">
+            <div class="flex items-center gap-3">
+                <span class="inline-block w-3 h-3 rounded-full bg-slate-400" id="status-dot"></span>
+                <h1 class="text-xl sm:text-2xl font-bold text-slate-600 dark:text-slate-300" id="status-text">スタンバイ</h1>
+            </div>
+            
+            <!-- 各種設定トグルボタン -->
+            <div class="flex flex-wrap items-center gap-2">
+                <!-- 予鈴（1分前）切替 -->
+                <button id="pre-alarm-toggle-btn" type="button" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition" title="残り1分前の予鈴ON/OFF">
+                    <span id="pre-alarm-icon">⏳</span>
+                    <span id="pre-alarm-label" class="hidden sm:inline">予鈴: ON</span>
+                </button>
+                <!-- 音声ON/OFF -->
+                <button id="sound-toggle-btn" type="button" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition" title="終了時のアラーム音のON/OFF">
+                    <span id="sound-icon">🔔</span>
+                    <span id="sound-label" class="hidden sm:inline">音: ON</span>
+                </button>
+                <!-- ダークモード切替 -->
+                <button id="theme-toggle-btn" type="button" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition" title="背景の明暗を切り替えます">
+                    <span id="theme-icon">🌙</span>
+                    <span class="hidden sm:inline">暗色</span>
+                </button>
+                <!-- 全画面表示 -->
+                <button id="fullscreen-btn" type="button" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition" title="全画面表示">
+                    <span>⛶</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 進捗バー -->
+        <div class="w-full h-4 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mb-6 shadow-inner">
+            <div id="progress-bar" class="h-full bg-blue-600 transition-all duration-150 ease-linear w-full"></div>
+        </div>
+
+        <!-- 残り時間の巨大表示エリア -->
+        <div class="mt-4 mb-2 flex items-center justify-center w-full">
+            <div id="time-display" class="timer-digits font-extrabold text-[22vw] sm:text-[11rem] md:text-[14rem] tracking-tight text-slate-900 dark:text-white transition-colors duration-200">
+                05:00
+            </div>
+        </div>
+
+        <!-- 時間微調整ボタン（＋/－/0秒） -->
+        <div class="flex flex-wrap gap-2 sm:gap-4 mb-6 sm:mb-8 justify-center" id="time-adjust-group">
+            <button type="button" data-seconds="0" class="preset-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100 font-bold hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-30 disabled:pointer-events-none transition shadow-sm">0秒にする</button>
+            <button type="button" class="adjust-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 disabled:pointer-events-none transition" data-adjust="-600">- 10分</button>
+            <button type="button" class="adjust-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 disabled:pointer-events-none transition" data-adjust="-60">- 1分</button>
+            <button type="button" class="adjust-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 disabled:pointer-events-none transition" data-adjust="-10">- 10秒</button>
+            <button type="button" class="adjust-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 disabled:pointer-events-none transition" data-adjust="10">+ 10秒</button>
+            <button type="button" class="adjust-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 disabled:pointer-events-none transition" data-adjust="60">+ 1分</button>
+            <button type="button" class="adjust-btn px-3 sm:px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 disabled:pointer-events-none transition" data-adjust="600">+ 10分</button>
+        </div>
+
+        <!-- メッセージ表示領域 -->
+        <div id="message-banner" class="h-8 mb-4 flex items-center justify-center">
+            <p id="message-text" class="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400 hidden">
+                ⏰ 時間になりました！
+            </p>
+        </div>
+
+        <!-- 操作ボタン群 -->
+        <div class="w-full grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <button id="start-btn" type="button" 
+                class="w-full py-4 sm:py-5 px-6 rounded-2xl text-xl sm:text-2xl font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition shadow-md disabled:opacity-30 disabled:pointer-events-none disabled:shadow-none">
+                開始
+            </button>
+            <button id="pause-btn" type="button" disabled
+                class="w-full py-4 sm:py-5 px-6 rounded-2xl text-xl sm:text-2xl font-bold text-white bg-amber-500 hover:bg-amber-600 active:scale-[0.98] transition shadow-md disabled:opacity-30 disabled:pointer-events-none disabled:shadow-none">
+                一時停止
+            </button>
+            <button id="resume-btn" type="button" disabled
+                class="w-full py-4 sm:py-5 px-6 rounded-2xl text-xl sm:text-2xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition shadow-md disabled:opacity-30 disabled:pointer-events-none disabled:shadow-none">
+                再開
+            </button>
+            <button id="reset-btn" type="button" disabled
+                class="w-full py-4 sm:py-5 px-6 rounded-2xl text-xl sm:text-2xl font-bold text-slate-700 dark:text-slate-800 bg-slate-200 hover:bg-slate-300 active:scale-[0.98] transition shadow-sm disabled:opacity-30 disabled:pointer-events-none">
+                リセット
+            </button>
+        </div>
+
+        <!-- 時間プリセット -->
+        <div class="w-full mt-10 pt-6 border-t border-slate-100 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400">
+            <div class="flex items-center gap-2 flex-wrap" id="preset-group">
+                <span class="font-bold text-slate-600 dark:text-slate-300">プリセット:</span>
+                <button type="button" data-seconds="60" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">1分</button>
+                <button type="button" data-seconds="180" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">3分</button>
+                <button type="button" data-seconds="300" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">5分</button>
+                <button type="button" data-seconds="600" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">10分</button>
+                <button type="button" data-seconds="900" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">15分</button>
+                <button type="button" data-seconds="1200" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">20分</button>
+                <button type="button" data-seconds="1800" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">30分</button>
+                <button type="button" data-seconds="3000" class="preset-btn px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition disabled:opacity-30 disabled:pointer-events-none">50分</button>
+                <button type="button" data-seconds="15" class="preset-btn px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 font-medium transition disabled:opacity-30 disabled:pointer-events-none" title="終了や予鈴のテスト用">🧪 15秒</button>
+            </div>
+            <div class="text-xs">
+                キー: [Space] 開始/停止 ・ [R] リセット
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function() {
+            const DEFAULT_DURATION_MS = 5 * 60 * 1000; 
+            
+            let timerState = 'IDLE';
+            let totalDurationMs = DEFAULT_DURATION_MS;
+            let remainingMs = totalDurationMs;
+            let targetEndTime = null;
+            let timerIntervalId = null;
+            
+            let soundEnabled = true;
+            let preAlarmEnabled = true;
+            let hasPlayedPreAlarm = false; // 予鈴が鳴ったかどうかのフラグ
+            let isDarkMode = false;
+
+            const timeDisplay = document.getElementById('time-display');
+            const progressBar = document.getElementById('progress-bar');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const messageText = document.getElementById('message-text');
+            const timerCard = document.getElementById('timer-card');
+
+            const startBtn = document.getElementById('start-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const resumeBtn = document.getElementById('resume-btn');
+            const resetBtn = document.getElementById('reset-btn');
+
+            const adjustBtns = document.querySelectorAll('.adjust-btn');
+            const presetBtns = document.querySelectorAll('.preset-btn');
+
+            const soundToggleBtn = document.getElementById('sound-toggle-btn');
+            const soundIcon = document.getElementById('sound-icon');
+            const preAlarmToggleBtn = document.getElementById('pre-alarm-toggle-btn');
+            const preAlarmIcon = document.getElementById('pre-alarm-icon');
+            const themeToggleBtn = document.getElementById('theme-toggle-btn');
+            const themeIcon = document.getElementById('theme-icon');
+            const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+            // --- Web Audio API (アラーム・予鈴) ---
+            let audioCtx = null;
+            
+            function initAudio() {
+                if (!audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) audioCtx = new AudioContextClass();
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            }
+
+            function playAlarmSound() {
+                if (!soundEnabled || !audioCtx) return;
+                try {
+                    const now = audioCtx.currentTime;
+                    const beepOffsets = [0, 0.18, 0.36, 0.8, 0.98, 1.16]; // ピピピッ・ピピピッ
+                    
+                    beepOffsets.forEach(offset => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(880, now + offset);
+                        
+                        gain.gain.setValueAtTime(0.001, now + offset);
+                        gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.02);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now + offset);
+                        osc.stop(now + offset + 0.15);
+                    });
+                } catch (e) { console.warn(e); }
+            }
+
+            function playPreAlarmSound() {
+                if (!soundEnabled || !preAlarmEnabled || !audioCtx) return;
+                try {
+                    // ポーンという穏やかな音（予鈴）
+                    const now = audioCtx.currentTime;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, now); // D5
+
+                    gain.gain.setValueAtTime(0.001, now);
+                    gain.gain.exponentialRampToValueAtTime(0.2, now + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0); // ゆっくり消える
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 1.2);
+                } catch (e) { console.warn(e); }
+            }
+
+            // --- 時間フォーマット ---
+            function formatTime(ms) {
+                const totalSeconds = Math.ceil(Math.max(0, ms) / 1000);
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                const mm = String(minutes).padStart(2, '0');
+                const ss = String(seconds).padStart(2, '0');
+                return `${mm}:${ss}`;
+            }
+
+            // --- 画面表示更新 ---
+            function updateDisplay() {
+                const formatted = formatTime(remainingMs);
+                timeDisplay.textContent = formatted;
+                document.title = `(${formatted}) 5分タイマー`;
+
+                const ratio = totalDurationMs > 0 ? Math.max(0, Math.min(1, remainingMs / totalDurationMs)) : 0;
+                progressBar.style.width = `${ratio * 100}%`;
+
+                // 残り時間に応じた色変化
+                const baseTextClass = 'timer-digits font-extrabold text-[22vw] sm:text-[11rem] md:text-[14rem] tracking-tight transition-colors duration-200 ';
+                
+                if (timerState === 'FINISHED') {
+                    timeDisplay.className = baseTextClass + 'text-red-600 dark:text-red-400';
+                    progressBar.className = 'h-full transition-all duration-150 ease-linear bg-red-600';
+                } else if (remainingMs <= 10000 && timerState !== 'IDLE') {
+                    timeDisplay.className = baseTextClass + 'text-red-600 dark:text-red-400';
+                    progressBar.className = 'h-full transition-all duration-150 ease-linear bg-red-500';
+                } else if (remainingMs <= 60000 && timerState !== 'IDLE') {
+                    timeDisplay.className = baseTextClass + 'text-amber-600 dark:text-amber-400';
+                    progressBar.className = 'h-full transition-all duration-150 ease-linear bg-amber-500';
+                } else {
+                    timeDisplay.className = baseTextClass + 'text-slate-900 dark:text-white';
+                    progressBar.className = 'h-full transition-all duration-150 ease-linear bg-blue-600';
+                }
+            }
+
+            // --- UI状態の更新（ボタン有効/無効化など） ---
+            function updateUIState() {
+                timerCard.classList.remove('time-up-bg');
+                messageText.classList.add('hidden');
+
+                const isIdle = (timerState === 'IDLE');
+                
+                // 時間調整系ボタンの有効/無効化（スタンバイ時のみ操作可能）
+                adjustBtns.forEach(btn => btn.disabled = !isIdle);
+                presetBtns.forEach(btn => btn.disabled = !isIdle);
+
+                switch (timerState) {
+                    case 'IDLE':
+                        startBtn.disabled = false;
+                        pauseBtn.disabled = true;
+                        resumeBtn.disabled = true;
+                        resetBtn.disabled = (remainingMs === totalDurationMs);
+                        statusDot.className = 'inline-block w-3 h-3 rounded-full bg-slate-400 dark:bg-slate-500';
+                        statusText.textContent = 'スタンバイ';
+                        break;
+                    case 'RUNNING':
+                        startBtn.disabled = true;
+                        pauseBtn.disabled = false;
+                        resumeBtn.disabled = true;
+                        resetBtn.disabled = false;
+                        statusDot.className = 'inline-block w-3 h-3 rounded-full bg-blue-600 animate-ping';
+                        statusText.textContent = 'カウントダウン中...';
+                        break;
+                    case 'PAUSED':
+                        startBtn.disabled = true;
+                        pauseBtn.disabled = true;
+                        resumeBtn.disabled = false;
+                        resetBtn.disabled = false;
+                        statusDot.className = 'inline-block w-3 h-3 rounded-full bg-amber-500';
+                        statusText.textContent = '一時停止中';
+                        break;
+                    case 'FINISHED':
+                        startBtn.disabled = true;
+                        pauseBtn.disabled = true;
+                        resumeBtn.disabled = true;
+                        resetBtn.disabled = false;
+                        statusDot.className = 'inline-block w-3 h-3 rounded-full bg-red-600';
+                        statusText.textContent = '終了';
+                        timerCard.classList.add('time-up-bg');
+                        messageText.classList.remove('hidden');
+                        break;
+                }
+            }
+
+            // --- タイマーループ ---
+            function tick() {
+                if (timerState !== 'RUNNING') return;
+
+                const now = performance.now();
+                remainingMs = Math.max(0, targetEndTime - now);
+                
+                // 予鈴の判定（残り時間が60秒以下になり、まだ鳴らしていない場合）
+                if (remainingMs <= 60000 && remainingMs > 0 && !hasPlayedPreAlarm && totalDurationMs > 60000) {
+                    hasPlayedPreAlarm = true;
+                    playPreAlarmSound();
+                }
+
+                updateDisplay();
+
+                if (remainingMs <= 0) {
+                    completeTimer();
+                }
+            }
+
+            // --- 各種アクション関数 ---
+            function startTimer() {
+                if (timerState !== 'IDLE') return;
+                initAudio();
+                
+                // 開始時に1分以下なら予鈴フラグは立てておく（鳴らさない）
+                if (remainingMs <= 60000) hasPlayedPreAlarm = true;
+
+                timerState = 'RUNNING';
+                targetEndTime = performance.now() + remainingMs;
+                
+                clearInterval(timerIntervalId);
+                timerIntervalId = setInterval(tick, 50);
+                
+                updateUIState();
+                updateDisplay();
+            }
+
+            function pauseTimer() {
+                if (timerState !== 'RUNNING') return;
+                clearInterval(timerIntervalId);
+                timerIntervalId = null;
+                remainingMs = Math.max(0, targetEndTime - performance.now());
+                timerState = 'PAUSED';
+                updateUIState();
+                updateDisplay();
+            }
+
+            function resumeTimer() {
+                if (timerState !== 'PAUSED') return;
+                timerState = 'RUNNING';
+                targetEndTime = performance.now() + remainingMs;
+                clearInterval(timerIntervalId);
+                timerIntervalId = setInterval(tick, 50);
+                updateUIState();
+                updateDisplay();
+            }
+
+            function resetTimer() {
+                clearInterval(timerIntervalId);
+                timerIntervalId = null;
+                timerState = 'IDLE';
+                remainingMs = totalDurationMs;
+                targetEndTime = null;
+                hasPlayedPreAlarm = false;
+                updateUIState();
+                updateDisplay();
+            }
+
+            function completeTimer() {
+                clearInterval(timerIntervalId);
+                timerIntervalId = null;
+                remainingMs = 0;
+                timerState = 'FINISHED';
+                updateUIState();
+                updateDisplay();
+                playAlarmSound();
+            }
+
+            // 時間の変更（プリセットまたは微調整）
+            function adjustTime(secondsToAdd) {
+                if (timerState !== 'IDLE') return;
+                
+                // 最小0秒、最大99分50秒（約100分）に制限
+                const newDuration = totalDurationMs + (secondsToAdd * 1000);
+                totalDurationMs = Math.max(0, Math.min(newDuration, 99 * 60 * 1000 + 50000));
+                
+                remainingMs = totalDurationMs;
+                hasPlayedPreAlarm = false;
+                updateDisplay();
+                updateUIState(); // リセットボタンの活性化チェックのため
+            }
+
+            // --- イベントリスナー ---
+            startBtn.addEventListener('click', startTimer);
+            pauseBtn.addEventListener('click', pauseTimer);
+            resumeBtn.addEventListener('click', resumeTimer);
+            resetBtn.addEventListener('click', resetTimer);
+
+            adjustBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const sec = parseInt(btn.getAttribute('data-adjust'), 10);
+                    adjustTime(sec);
+                });
+            });
+
+            presetBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const sec = parseInt(btn.getAttribute('data-seconds'), 10);
+                    if (!isNaN(sec) && sec >= 0) {
+                        totalDurationMs = sec * 1000;
+                        remainingMs = totalDurationMs;
+                        hasPlayedPreAlarm = false;
+                        updateDisplay();
+                        updateUIState();
+                    }
+                });
+            });
+
+            // 音声トグル
+            soundToggleBtn.addEventListener('click', () => {
+                soundEnabled = !soundEnabled;
+                soundIcon.textContent = soundEnabled ? '🔔' : '🔕';
+                soundToggleBtn.classList.toggle('opacity-50', !soundEnabled);
+            });
+
+            // 予鈴トグル
+            preAlarmToggleBtn.addEventListener('click', () => {
+                preAlarmEnabled = !preAlarmEnabled;
+                preAlarmIcon.textContent = preAlarmEnabled ? '⏳' : '⌛';
+                preAlarmToggleBtn.classList.toggle('opacity-50', !preAlarmEnabled);
+            });
+
+            // ダークモード（黒板モード）トグル
+            themeToggleBtn.addEventListener('click', () => {
+                isDarkMode = !isDarkMode;
+                if (isDarkMode) {
+                    document.documentElement.classList.add('dark');
+                    themeIcon.textContent = '☀️';
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    themeIcon.textContent = '🌙';
+                }
+            });
+
+            // 全画面
+            fullscreenBtn.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                } else {
+                    document.exitFullscreen().catch(() => {});
+                }
+            });
+
+            // キーボードショートカット
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && document.activeElement.tagName !== 'BUTTON') {
+                    e.preventDefault();
+                    if (timerState === 'IDLE') startTimer();
+                    else if (timerState === 'RUNNING') pauseTimer();
+                    else if (timerState === 'PAUSED') resumeTimer();
+                } else if (e.key === 'r' || e.key === 'R') {
+                    if (timerState !== 'IDLE' || remainingMs !== totalDurationMs) {
+                        resetTimer();
+                    }
+                }
+            });
+
+            // 初期化
+            updateUIState();
+            updateDisplay();
+        })();
+    </script>
+</body>
+</html>
